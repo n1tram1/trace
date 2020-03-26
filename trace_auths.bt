@@ -1,0 +1,36 @@
+#!/usr/bin/bpftrace
+
+#include <pwd.h>
+
+#include "sshd.h"
+
+struct auth {
+	const char *username;
+	time_t start;
+	time_t end;
+};
+
+uprobe:/usr/bin/sshd:user_key_allowed
+{
+	$user_pw = (struct passwd *)arg1;
+	$username = str($user_pw->pw_name);
+
+	/* Not thread-safe */
+	@auths[tid] = nsecs;
+
+	printf("[[thread: %d] user_key_allowed] \"%s\"\n", tid, $username);
+
+	$options = (ServerOptions *) uaddr("options");
+	printf("\tnum_authkeys_files = %u\n", $options->num_authkeys_files);
+	printf("\ttrusted_user_ca_keys = %p\n", $options->trusted_user_ca_keys);
+}
+
+uretprobe:/usr/bin/sshd:user_key_allowed
+{
+	printf("[user_key_allowed] retval: %lx time: %d ms\n\n", retval, (nsecs - @start[tid]) / 1000000);
+}
+
+END
+{
+	clear(@start);
+}
