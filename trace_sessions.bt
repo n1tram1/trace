@@ -1,0 +1,61 @@
+#!/usr/bin/bpftrace
+
+#include <pwd.h>
+
+#include "sshd.h"
+
+uprobe:/usr/bin/sshd:do_authenticated
+{
+	$ssh = (struct ssh *)arg0;
+	$user_pw = (struct passwd *)arg1;
+
+	@sessions[$ssh] = (struct ssh *)$ssh;
+	@thread_session[tid] = (struct ssh *) $ssh;
+
+	@total_read[tid] = (uint64) 0;
+
+	printf("[do_authenticated (tid: %lu]\n", tid);
+}
+
+uprobe:/usr/bin/sshd:do_cleanup
+{
+	$ssh = (struct ssh *)arg0;
+	$authctxt = (struct Authctxt *)arg1;
+
+	printf("[do_cleanup (tid: %lu)] user: %s ssh: %p in: %u out: %u\n",
+	       tid,
+	       str($authctxt->pw->pw_name),
+	       $ssh,
+	       $ssh->state->p_read.packets,
+	       $ssh->state->p_send.packets);
+}
+
+uprobe:/usr/bin/sshd:cleanup_exit
+{
+	printf("[cleanup_exit (tid: %lu)]\n", tid);
+}
+
+uprobe:/usr/bin/sshd:ssh_packet_close
+{
+	printf("[ssh_packet_close (tid: %lu)]\n", tid);
+}
+
+tracepoint:syscalls:sys_enter_read
+/comm == "sshd"/
+{
+	$ssh = (struct ssh *) @thread_session[tid];
+	$ssh_fd = (uint64) $ssh->state->connection_in;
+
+	//printf("ssh_fd = %lu\targs->fd = %lu\n", $ssh_fd, args->fd);
+
+	if ($ssh_fd == args->fd) {
+		@total_read[tid] += args->count;
+	}
+}
+
+uprobe:/usr/bin/sshd:do_cleanup
+{
+	$ssh = (struct ssh *) @thread_session[tid];
+
+	printf("[do_cleanup (tid: %lu)] %p %p\n", tid, $ssh, arg0);
+}
