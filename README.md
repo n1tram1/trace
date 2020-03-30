@@ -7,7 +7,7 @@ The bpftrace scripts were just prototypes for the BCC scripts.
 # Scripts
 
 ## trace_sessions
-Shows a recap of the SSH sessions as they end.
+Collect stats of sessions as they end.
 
 ### Screenshots
 ```
@@ -17,8 +17,20 @@ Shows a recap of the SSH sessions as they end.
 |         root         |    4571136 |   16851732 |                10388 |
 ^C----------------------------------------------------------------------/
 ```
+## trace_auths
+Collect stats about authentications.
 
+### Screenshots
+```
+/--------------------------------------------------\
+|       USERNAME       |  SUCCESS   | TIME TO AUTH |
+|        martin        |     1      |     2011     |
+|        martin        |     1      |     9370     |
+|         root         |     0      |     2008     |
+^C-------------------------------------------------/
+```
 
 # Requirements
+* sshd in (*/usr/bin/sshd*) that has not been stripped
 * bcc
 * python-bcc
