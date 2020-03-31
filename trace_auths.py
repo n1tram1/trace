@@ -15,7 +15,6 @@ class Authentication(ct.Structure):
         ("successful", ct.c_ulonglong),
     ]
 
-
 bpf_source = """
 #include <uapi/linux/ptrace.h>
 
@@ -51,7 +50,6 @@ int trace_ret_user_key_allowed(struct pt_regs *ctx) {
         auth->end = bpf_ktime_get_ns();
         auth->successful = PT_REGS_RC(ctx);
         auth_events.perf_submit(ctx, auth, sizeof(*auth));
-        // bpf_trace_printk("username: %s time: %d\\n", auth->username, (auth->end - auth->start) / 1000000);
     }
 
     return 0;
@@ -66,28 +64,22 @@ def auth_cb(cpu, data, size):
     time = (auth.end - auth.start) // 1000000
     username = auth.username.decode("utf-8")
 
-    print("{:>7}, {:>10}, {}".format(success, time, username))
+    print("| {:^20} | {:^10} | {:^12} |".format(username, success, time))
 
 def main():
-    parser = argparse.ArgumentParser(
-        description="Trace sshd pubkey authentication",
-    )
-    parser.add_argument("-o", "--output-file", dest="output_file", help="File to log the traces to", type=str)
-    args = parser.parse_args()
-
-
     bpf = BPF(text = bpf_source)
     bpf.attach_uprobe(name="/usr/bin/sshd", sym="user_key_allowed", fn_name="trace_user_key_allowed")
     bpf.attach_uretprobe(name="/usr/bin/sshd", sym="user_key_allowed", fn_name="trace_ret_user_key_allowed")
     bpf["auth_events"].open_perf_buffer(auth_cb);
 
-    print("{:>7}, {:>10}, {:>}".format("SUCCESS", "TIME", "USERNAME"))
+    print("/-{:^20}---{:^10}---{:^12}-\\".format("-" * 20, "-" * 10, "-" * 12))
+    print("| {:^20} | {:^10} | {:^12} |".format("USERNAME", "SUCCESS", "TIME TO AUTH"))
 
     while True:
         try:
             bpf.perf_buffer_poll()
         except KeyboardInterrupt:
-            logger.save()
+            print("{:^20}---{:^10}---{:^12}-/".format("-" * 20, "-" * 10, "-" * 12))
             sys.exit()
 
 if __name__ == "__main__":
