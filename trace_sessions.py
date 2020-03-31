@@ -37,8 +37,8 @@ struct session {
 };
 
 /**
- * The BPF_HASH @sessions is used to store the session associated with
- * each thread running a session.
+ * The @sessions hashmap is used to store the struct session associated with
+ * each thread running an ssh session.
  */
 BPF_HASH(sessions, pid_t, struct session);
 
@@ -46,10 +46,10 @@ BPF_PERF_OUTPUT(session_events);
 
 /**
  * Each sessions is handled by a single thread.
- * do_authenticated is called to start the session
+ * do_authenticated is called to start the ssh session
  * (which implies the user has successfully authed).
  *
- * At this probe, we store the new session into the BPF_HASH @sessions.
+ * At this probe, we store the new struct session into the @sessions hashmap.
  */
 int trace_do_authenticated(struct pt_regs *ctx, struct ssh *ssh,
                            struct Authctxt *authctxt)
@@ -71,9 +71,9 @@ int trace_do_authenticated(struct pt_regs *ctx, struct ssh *ssh,
 }
 
 /**
- * At this probe, the session has ended so we gather our data and send it back
- * into the event buffer.
- * The session must be removed BPF_HASH @sessions because the thread might get
+ * At this probe, the ssh session has ended so we gather our data and send it
+ * back into the event buffer.
+ * The session must be removed @sessions hashmap because the thread might get
  * reused for another session.
  */
 int trace_do_cleanup(struct pt_regs *ctx)
@@ -93,7 +93,7 @@ int trace_do_cleanup(struct pt_regs *ctx)
 }
 
 /**
- * Checks whether @param[fd] is a socket  of the @param[ssh] session.
+ * Checks whether @param[fd] is a socket of the @param[ssh] session.
  */
 static int is_sshd_socket(u64 fd, struct ssh *ssh) {
     char comm[TASK_COMM_LEN] = "";
@@ -112,7 +112,8 @@ static int is_sshd_socket(u64 fd, struct ssh *ssh) {
 }
 
 /**
- * We check each call the sys_read to count how much data is received per session.
+ * Check each call to sys_read to count how much data is received
+ * by each session.
  */
 TRACEPOINT_PROBE(syscalls, sys_enter_read)
 {
@@ -132,7 +133,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_read)
 }
 
 /**
- * We check each call the sys_write to count how much data is sent per session.
+ * Check each call to sys_write to count how much data is sent by each session.
  */
 TRACEPOINT_PROBE(syscalls, sys_enter_write)
 {
