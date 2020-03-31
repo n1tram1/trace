@@ -41,6 +41,7 @@ sudo ./trace_authorizedkeyscommand.py
 
 # Shortcomings
 * Needs a non-stripped sshd
+* sshd must be located in /usr/bin/sshd
 * Uses eBPF uprobes and structs definitions taken from the OpenSSH source code.
   This is a very unstable API to trace and is prone to breaking
   with every OpenSSH updates.
