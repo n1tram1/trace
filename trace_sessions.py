@@ -2,12 +2,8 @@
 
 from bcc import BPF
 
-import argparse
 import sys
-import json
 import ctypes as ct
-
-import bpf_event_logger
 
 USERNAME_MAX = 30
 
@@ -25,20 +21,11 @@ class Session(ct.Structure):
 bpf_source = """
 #include <uapi/linux/ptrace.h>
 #include <linux/sched.h>
+#include <linux/compiler.h>
 
 #include "sshd.h"
 
 #define USERNAME_MAX 30
-
-struct passwd {
-   char   *pw_name;       /* username */
-   char   *pw_passwd;     /* user password */
-   uid_t   pw_uid;        /* user ID */
-   gid_t   pw_gid;        /* group ID */
-   char   *pw_gecos;      /* user information */
-   char   *pw_dir;        /* home directory */
-   char   *pw_shell;      /* shell program */
-};
 
 struct session {
     char username[USERNAME_MAX];
@@ -48,16 +35,30 @@ struct session {
     u64 end;
     struct ssh *ssh;
 };
+
+/**
+ * The BPF_HASH @sessions is used to store the session associated with
+ * each thread running a session.
+ */
 BPF_HASH(sessions, pid_t, struct session);
 
 BPF_PERF_OUTPUT(session_events);
 
-int trace_do_authenticated(struct pt_regs *ctx, struct ssh *ssh, struct Authctxt *authctxt)
+/**
+ * Each sessions is handled by a single thread.
+ * do_authenticated is called to start the session
+ * (which implies the user has successfully authed).
+ *
+ * At this probe, we store the new session into the BPF_HASH @sessions.
+ */
+int trace_do_authenticated(struct pt_regs *ctx, struct ssh *ssh,
+                           struct Authctxt *authctxt)
 {
-    pid_t pid = bpf_get_current_pid_tgid() >> 32;
+    pid_t pid = bpf_get_current_pid_tgid();
     struct session sess = {};
 
-    bpf_probe_read_str(&sess.username, sizeof(sess.username), authctxt->pw->pw_name);
+    bpf_probe_read_str(&sess.username, sizeof(sess.username),
+                       authctxt->pw->pw_name);
     sess.recv_bytes = 0;
     sess.sent_bytes = 0;
     sess.start = bpf_ktime_get_ns();
@@ -69,9 +70,15 @@ int trace_do_authenticated(struct pt_regs *ctx, struct ssh *ssh, struct Authctxt
     return 0;
 }
 
+/**
+ * At this probe, the session has ended so we gather our data and send it back
+ * into the event buffer.
+ * The session must be removed BPF_HASH @sessions because the thread might get
+ * reused for another session.
+ */
 int trace_do_cleanup(struct pt_regs *ctx)
 {
-    pid_t pid = bpf_get_current_pid_tgid() >> 32;
+    pid_t pid = bpf_get_current_pid_tgid();
 
     struct session *sess  = sessions.lookup(&pid);
     if (!sess)
@@ -80,33 +87,36 @@ int trace_do_cleanup(struct pt_regs *ctx)
     sess->end = bpf_ktime_get_ns();
     session_events.perf_submit(ctx, sess, sizeof(*sess));
 
+    sessions.delete(&pid);
+
     return 0;
 }
 
-struct sys_read_args {
-    // from /sys/kernel/debug/tracing/events/syscalls/sys_enter_read/format
-    u64 __unused__;
-    s32 __syscall_nr;
-    u64 fd;
-    unsigned char *buf;
-    u64 count;
-};
-
+/**
+ * Checks whether @param[fd] is a socket  of the @param[ssh] session.
+ */
 static int is_sshd_socket(u64 fd, struct ssh *ssh) {
     char comm[TASK_COMM_LEN] = "";
     u64 ssh_in_fd = ssh->state->connection_in;
     u64 ssh_out_fd = ssh->state->connection_out;
 
     bpf_get_current_comm(&comm, sizeof(comm));
-    if (!(comm[0] == 's' && comm[1] == 's' && comm[2] == 'h' && comm[3] == 'd' && comm[4] == '\\0'))
+    if (!(comm[0] == 's'
+        && comm[1] == 's'
+        && comm[2] == 'h'
+        && comm[3] == 'd'
+        && comm[4] == '\\0'))
         return 0;
 
     return fd == ssh_in_fd | fd == ssh_out_fd;
 }
 
-int trace_sys_enter_read(struct sys_read_args *args)
+/**
+ * We check each call the sys_read to count how much data is received per session.
+ */
+TRACEPOINT_PROBE(syscalls, sys_enter_read)
 {
-    pid_t pid = bpf_get_current_pid_tgid() >> 32;
+    pid_t pid = bpf_get_current_pid_tgid();
     struct session *sess;
 
     sess = sessions.lookup(&pid);
@@ -121,9 +131,13 @@ int trace_sys_enter_read(struct sys_read_args *args)
     return 0;
 }
 
-int trace_sys_enter_write(struct sys_read_args *args)
+/**
+ * We check each call the sys_write to count how much data is sent per session.
+ */
+TRACEPOINT_PROBE(syscalls, sys_enter_write)
 {
-    pid_t pid = bpf_get_current_pid_tgid() >> 32; struct session *sess;
+    pid_t pid = bpf_get_current_pid_tgid();
+    struct session *sess;
     sess = sessions.lookup(&pid);
     if (!sess)
         return 1;
@@ -152,8 +166,6 @@ def main():
     bpf = BPF(text = bpf_source)
     bpf.attach_uprobe(name="/usr/bin/sshd", sym="do_authenticated", fn_name="trace_do_authenticated")
     bpf.attach_uprobe(name="/usr/bin/sshd", sym="do_cleanup", fn_name="trace_do_cleanup")
-    bpf.attach_tracepoint(tp="syscalls:sys_enter_read", fn_name="trace_sys_enter_read")
-    bpf.attach_tracepoint(tp="syscalls:sys_enter_write", fn_name="trace_sys_enter_write")
     bpf["session_events"].open_perf_buffer(session_cb);
 
     print("/-{:^20}---{:^10}---{:^10}---{:^20}-\\".format("-" * 20, "-" * 10, "-" * 10, "-" * 20))
