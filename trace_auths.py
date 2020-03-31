@@ -2,14 +2,14 @@
 
 from bcc import BPF
 
-import argparse
 import sys
-import json
 import ctypes as ct
+
+USERNAME_MAX = 30
 
 class Authentication(ct.Structure):
     _fields_ = [
-        ("username", ct.c_char * 30),
+        ("username", ct.c_char * USERNAME_MAX),
         ("start", ct.c_ulonglong),
         ("end", ct.c_ulonglong),
         ("successful", ct.c_ulonglong),
@@ -17,6 +17,8 @@ class Authentication(ct.Structure):
 
 bpf_source = """
 #include <uapi/linux/ptrace.h>
+
+#include "sshd.h"
 
 #define USERNAME_MAX 30
 
@@ -26,13 +28,22 @@ struct authentication {
     u64 end;
     u64 successful;
 };
+
+/**
+ * The @auths hashmap is used to store the struct auth associated to
+ * a pubkey auth.
+ */
 BPF_HASH(auths, pid_t, struct authentication);
 
 BPF_PERF_OUTPUT(auth_events);
 
-int trace_user_key_allowed(struct pt_regs *ctx, void *sshd, struct passwd * user_pwd) {
-    pid_t pid = bpf_get_current_pid_tgid(); struct authentication auth = {};
-    bpf_probe_read_str(&auth.username, sizeof(auth.username), user_pwd->pw_name),
+int trace_user_key_allowed(struct pt_regs *ctx, struct ssh *ssh,
+                           struct passwd * user_pwd) {
+    pid_t pid = bpf_get_current_pid_tgid();
+    struct authentication auth = {};
+
+    bpf_probe_read_str(&auth.username, sizeof(auth.username),
+                       user_pwd->pw_name),
     auth.start = bpf_ktime_get_ns();
     auth.end = 0;
     auth.successful = 0;
@@ -46,15 +57,17 @@ int trace_ret_user_key_allowed(struct pt_regs *ctx) {
     pid_t pid = bpf_get_current_pid_tgid();
 
     struct authentication *auth = auths.lookup(&pid);
-    if (auth) {
-        auth->end = bpf_ktime_get_ns();
-        auth->successful = PT_REGS_RC(ctx);
-        auth_events.perf_submit(ctx, auth, sizeof(*auth));
-    }
+    if (!auth)
+        return 1;
+
+    auth->end = bpf_ktime_get_ns();
+    auth->successful = PT_REGS_RC(ctx);
+    auth_events.perf_submit(ctx, auth, sizeof(*auth));
+
+    auths.delete(&pid);
 
     return 0;
 }
-
 """
 
 def auth_cb(cpu, data, size):
