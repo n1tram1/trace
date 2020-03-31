@@ -7,8 +7,6 @@ import sys
 import json
 import ctypes as ct
 
-import bpf_event_logger
-
 class Authentication(ct.Structure):
     _fields_ = [
         ("username", ct.c_char * 30),
@@ -22,16 +20,6 @@ bpf_source = """
 #include <uapi/linux/ptrace.h>
 
 #define USERNAME_MAX 30
-
-struct passwd {
-   char   *pw_name;       /* username */
-   char   *pw_passwd;     /* user password */
-   uid_t   pw_uid;        /* user ID */
-   gid_t   pw_gid;        /* group ID */
-   char   *pw_gecos;      /* user information */
-   char   *pw_dir;        /* home directory */
-   char   *pw_shell;      /* shell program */
-};
 
 struct authentication {
     char username[USERNAME_MAX];
