@@ -1,2 +1,4 @@
-* count of much was sent/recv for the auth
+* count how much is sent/recv for the auth
 * talk about issues with the script (regarding unstable APIs)
+* output in json/xml/csv
+* pretty-print the formatted output
