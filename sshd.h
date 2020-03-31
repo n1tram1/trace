@@ -1,3 +1,15 @@
+/* From /usr/include/pwd.h */
+struct passwd {
+   char   *pw_name;       /* username */
+   char   *pw_passwd;     /* user password */
+   uid_t   pw_uid;        /* user ID */
+   gid_t   pw_gid;        /* group ID */
+   char   *pw_gecos;      /* user information */
+   char   *pw_dir;        /* home directory */
+   char   *pw_shell;      /* shell program */
+};
+/* !/usr/include/pwd.h */
+
 /* Imports from OpenSSH 8.2p1 */
 
 #ifndef SSHD_H
