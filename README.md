@@ -30,6 +30,12 @@ Collect stats about the auth with the 'AuthorizedKeysCommand' program.
 ^C-------------------------------------------------/
 ```
 
+# Shortcomings
+* Needs a non-stripped sshd
+* Uses eBPF uprobes and structs definitions taken from the OpenSSH source code.
+  This is a very unstable API to trace and is prone to breaking
+  with every OpenSSH updates.
+
 # Requirements
 * sshd in (*/usr/bin/sshd*) that has not been stripped
 * bcc
