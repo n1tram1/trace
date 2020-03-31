@@ -17,8 +17,8 @@ Collect stats of sessions as they end.
 |         root         |    4571136 |   16851732 |                10388 |
 ^C----------------------------------------------------------------------/
 ```
-## trace_auths
-Collect stats about authentications.
+## trace_authorizedkeyscommand
+Collect stats about the auth with the 'AuthorizedKeysCommand' program.
 
 ### Screenshots
 ```
