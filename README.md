@@ -29,6 +29,15 @@ Collect stats about the auth with the 'AuthorizedKeysCommand' program.
 |         root         |     0      |     2008     |
 ^C-------------------------------------------------/
 ```
+# How to run
+Just
+```
+sudo ./trace_sessions.py
+```
+or 
+```
+sudo ./trace_authorizedkeyscommand.py
+```
 
 # Shortcomings
 * Needs a non-stripped sshd
