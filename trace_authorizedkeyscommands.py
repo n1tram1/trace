@@ -73,7 +73,7 @@ int trace_ret_user_key_allowed(struct pt_regs *ctx) {
 def auth_cb(cpu, data, size):
     assert size >= ct.sizeof(Authentication)
     auth = ct.cast(data, ct.POINTER(Authentication)).contents
-    success = bool(auth.successful)
+    success = auth.successful
     time = (auth.end - auth.start) // 1000000
     username = auth.username.decode("utf-8")
 
