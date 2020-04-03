@@ -8,7 +8,22 @@ bpf_source = """
 #include <uapi/linux/ptrace.h>
 #include <linux/sched.h>
 
-struct auth_thread {
+/*
+ * Diagram below shows the flow of the specific sshd thread being traced.
+ *
+ *                             execve   execute authkeys prog
+ *                                !        comm != "sshd"
+ *                                !      (subprocess thread)       if auth fails
+ *                            +---!----------------------------X  +-------------->exit_group(255)
+ * recv connection            |                                |  |
+ *  comm == "sshd"            |                                |  |
+ * (connection thread)   clone|                           wait4|  |
+ *        |                   |                                |  |
+ *        +-------------------+--------------------------------+--+------------>start ssh session in same thread
+ *                                                                    alarm(0)
+ */
+
+struct connection_thread {
     pid_t pid;
     pid_t subprocess_thread;
 
@@ -20,7 +35,7 @@ struct auth_thread {
     bool success;
 };
 
-BPF_HASH(threads, pid_t, struct auth_thread);
+BPF_HASH(threads, pid_t, struct connection_thread);
 
 static pid_t get_parent_pid_tgid(void)
 {
@@ -46,16 +61,19 @@ static int is_comm_sshd(void)
     return strncmp(comm, "sshd", 4) == 0;
 }
 
+/**
+ * Detect the first clone, for the authkeys prog subprocess.
+ */
 TRACEPOINT_PROBE(syscalls, sys_exit_clone)
 {
     pid_t pid_tgid = bpf_get_current_pid_tgid();
     pid_t child_pid = args->ret;
-    struct auth_thread cur = {};
+    struct connection_thread cur = {};
 
     if (!is_comm_sshd())
         return 1;
 
-    /* Make sure we are in the parent */
+    /* Check we are in the parent */
     if (child_pid == 0)
         return 1;
 
@@ -73,7 +91,7 @@ TRACEPOINT_PROBE(syscalls, sys_exit_clone)
 
 static bool is_authkey_program()
 {
-    char authkey_program[] = "ssh-auth.sh";
+    char authkey_program[] = "__AUTHKEYSCOMMAND__";
     char comm[sizeof(authkey_program)];
 
     bpf_get_current_comm(&comm, sizeof(comm));
@@ -86,10 +104,15 @@ static bool is_authkey_program()
     return true;
 }
 
+/**
+ * Catch when the execve syscall finishes for the subprocess.
+ * We must the new comm of the program because sshd
+ * uses execve for other things. 
+ */
 TRACEPOINT_PROBE(syscalls, sys_exit_execve)
 {
     pid_t parent_pid_tgid = get_parent_pid_tgid();
-    struct auth_thread *parent;
+    struct connection_thread *parent;
 
     if ((parent = threads.lookup(&parent_pid_tgid)) == NULL)
         return 1;
@@ -102,11 +125,16 @@ TRACEPOINT_PROBE(syscalls, sys_exit_execve)
     return 0;
 }
 
+/**
+ * Catch when the parent waits for its subprocess.
+ * Check that the subprocess has execved to make sure
+ * it is our child which has executed the authkeys prog.
+ */
 TRACEPOINT_PROBE(syscalls, sys_exit_wait4)
 {
     pid_t pid_tgid = bpf_get_current_pid_tgid();
     pid_t waited_pid = args->ret;
-    struct auth_thread *cur;
+    struct connection_thread *cur;
 
     if (!is_comm_sshd())
         return 1;
@@ -127,10 +155,14 @@ TRACEPOINT_PROBE(syscalls, sys_exit_wait4)
     return 0;
 }
 
+/**
+ * Catch all exit_group calls because we know that sshd will kill its thread
+ * with an exit(255) if a failure occurs.
+ */
 TRACEPOINT_PROBE(syscalls, sys_enter_exit_group)
 {
     pid_t pid_tgid = bpf_get_current_pid_tgid();
-    struct auth_thread *cur;
+    struct connection_thread *cur;
 
     if (!is_comm_sshd())
         return 1;
@@ -147,10 +179,16 @@ TRACEPOINT_PROBE(syscalls, sys_enter_exit_group)
     return 0;
 }
 
+/**
+ * Before starting the auth sshd had set an alarm.
+ * It disables that alarm once auth is successful.
+ * Therefore if we catch an alarm(0), then the auth succeeded.
+ * (We also check that the authkeys prog has ran)
+ */
 TRACEPOINT_PROBE(syscalls, sys_enter_alarm)
 {
     pid_t pid_tgid = bpf_get_current_pid_tgid();
-    struct auth_thread *cur;
+    struct connection_thread *cur;
 
     if (!is_comm_sshd())
         return 1;
@@ -167,7 +205,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_alarm)
 
     return 0;
 }
-"""
+""".replace("__AUTHKEYSCOMMAND__", "ssh-auth.sh")
 
 def main():
     bpf = BPF(text=bpf_source)
