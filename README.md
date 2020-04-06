@@ -6,10 +6,18 @@ The bpftrace scripts were just prototypes for the BCC scripts.
 
 # Scripts
 
-## trace_sessions
+## with_syscalls
+===============
+
+## with_symbols
+==============
+Scripts to trace sshd that require sshd to not be stripped.
+Also make uses of unstable APIs.
+
+### trace_sessions
 Collect stats of sessions as they end.
 
-### Screenshots
+#### Screenshots
 ```
 /-----------------------------------------------------------------------\
 |       USERNAME       |  RECV (B)  |  SENT (B)  |      TIME (ms)       |
@@ -17,10 +25,10 @@ Collect stats of sessions as they end.
 |         root         |    4571136 |   16851732 |                10388 |
 ^C----------------------------------------------------------------------/
 ```
-## trace_authorizedkeyscommand
+### trace_authorizedkeyscommand
 Collect stats about the auth with the 'AuthorizedKeysCommand' program.
 
-### Screenshots
+#### Screenshots
 ```
 /--------------------------------------------------\
 |       USERNAME       |  SUCCESS   | TIME TO AUTH |
