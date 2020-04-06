@@ -59,7 +59,12 @@ struct authorizedkeys_command {
 
 BPF_PERF_OUTPUT(authorizedkeys_command_events);
 
-static pid_t get_parent_pid_tgid(void)
+static u64 get_pid_tgid(const struct task_struct *task)
+{
+    return ((u64)task->tgid << 32) | task->pid;
+}
+
+static u64 get_parent_pid_tgid(void)
 {
     struct task_struct *cur = (struct task_struct *)bpf_get_current_task();
     struct task_struct *parent;
@@ -72,10 +77,10 @@ static pid_t get_parent_pid_tgid(void)
     if (!parent)
         return 0;
 
-    return ((u64)parent->tgid << 32) | parent->pid;
+    return get_pid_tgid(parent);
 }
 
-static int is_comm_sshd(void)
+static int is_comm_sshd(const struct task_struct *task)
 {
     char comm[TASK_COMM_LEN];
     bpf_get_current_comm(&comm, sizeof(comm));
@@ -87,7 +92,6 @@ static int is_parent_comm_sshd(void)
 {
     struct task_struct *cur = (struct task_struct *)bpf_get_current_task();
     struct task_struct *parent;
-    char parent_comm[TASK_COMM_LEN];
 
     if (!cur)
         return 0;
@@ -96,20 +100,26 @@ static int is_parent_comm_sshd(void)
     if (!parent)
         return 0;
 
-    bpf_probe_read_str(&parent_comm, sizeof(parent_comm), &parent->comm);
-
-    return strncmp(parent_comm, "sshd", 4) == 0;
+    return is_comm_sshd(parent);
 }
 
-static u32 __get_pid()
+static int is_current_comm_sshd(void)
+{
+    char comm[TASK_COMM_LEN];
+
+    bpf_get_current_comm(&comm, sizeof(comm));
+
+    return strncmp(comm, "sshd", 4) == 0;
+}
+
+static u32 get_current_pid()
 {
     return (u32) bpf_get_current_pid_tgid();
 }
 
-
 static u64 get_random_id(void)
 {
-    return ((u64)bpf_get_prandom_u32() << 32) | __get_pid();
+    return ((u64)bpf_get_prandom_u32() << 32) | get_current_pid();
 }
 
 /**
@@ -124,7 +134,7 @@ TRACEPOINT_PROBE(syscalls, sys_exit_clone)
     pid_t child_tgid = args->ret;
     struct connection_process cur = {};
 
-    if (!is_comm_sshd())
+    if (!is_current_comm_sshd())
         return 1;
 
     /* Check we are in the parent */
@@ -228,7 +238,7 @@ TRACEPOINT_PROBE(syscalls, sys_exit_wait4)
     pid_t waited_pid = args->ret;
     struct connection_process *cur;
 
-    if (!is_comm_sshd())
+    if (!is_current_comm_sshd())
         return 1;
 
     if ((cur = threads.lookup(&pid_tgid)) == NULL)
@@ -262,7 +272,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_exit_group)
     pid_t pid_tgid = bpf_get_current_pid_tgid();
     struct connection_process *cur;
 
-    if (!is_comm_sshd())
+    if (!is_current_comm_sshd())
         return 1;
 
     if ((cur = threads.lookup(&pid_tgid)) == NULL)
@@ -294,7 +304,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_alarm)
     pid_t pid_tgid = bpf_get_current_pid_tgid();
     struct connection_process *cur;
 
-    if (!is_comm_sshd())
+    if (!is_current_comm_sshd())
         return 1;
 
     if ((cur = threads.lookup(&pid_tgid)) == NULL)
