@@ -146,10 +146,11 @@ TRACEPOINT_PROBE(syscalls, sys_exit_clone)
 static bool is_authkey_program()
 {
     char authkey_program[] = "__AUTHKEYSCOMMAND__";
-    char comm[sizeof(authkey_program)];
+    char comm[sizeof(authkey_program)] = "";
 
     bpf_get_current_comm(&comm, sizeof(comm));
 
+    /* Do the string comparison here to make the BPF checker happy. */
     for (size_t i = 0; i < sizeof(comm); i++) {
         if (comm[i] != authkey_program[i])
             return false;
