@@ -161,9 +161,9 @@ static bool is_authkey_program()
     return true;
 }
 
-static void get_argv(char **dst, char **src, size_t len)
+static void get_argv(char **dst, const char *const *argv, size_t len)
 {
-    bpf_probe_read(dst, sizeof(*dst) * len, src);
+    bpf_probe_read(dst, sizeof(*dst) * len, argv);
 }
 
 /**
