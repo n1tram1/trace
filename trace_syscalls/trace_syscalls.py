@@ -35,12 +35,12 @@ struct connection_thread {
     pid_t pid;
     pid_t subprocess_thread;
 
-    u64 subprocess_start;
-    u64 subprocess_end;
+    u64 subprocess_start_time;
+    u64 subprocess_end_time;
 
     bool subprocess_execved;
 
-    bool success;
+    bool auth_success;
 };
 
 BPF_HASH(threads, pid_t, struct connection_thread);
@@ -134,9 +134,9 @@ TRACEPOINT_PROBE(syscalls, sys_exit_clone)
     cur.username[0] = '\\0';
     cur.pid = pid_tgid;
     cur.subprocess_thread = child_pid;
-    cur.subprocess_start = bpf_ktime_get_ns();
+    cur.subprocess_start_time = bpf_ktime_get_ns();
     cur.subprocess_execved = false;
-    cur.success = true;
+    cur.auth_success = true;
 
     threads.update(&pid_tgid, &cur);
 
@@ -238,12 +238,12 @@ TRACEPOINT_PROBE(syscalls, sys_exit_wait4)
      * to make sure the subprocess is dead.
      */
     if (cur->subprocess_execved && waited_pid == cur->subprocess_thread) {
-        cur->subprocess_end = bpf_ktime_get_ns();
+        cur->subprocess_end_time = bpf_ktime_get_ns();
 
         struct authorizedkeys_command cmd = {
             .username = "",
-            .start = cur->subprocess_start,
-            .end = cur->subprocess_end,
+            .start = cur->subprocess_start_time,
+            .end = cur->subprocess_end_time,
         };
         copy_username(cmd.username, cur->username);
 
@@ -272,7 +272,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_exit_group)
         return 1;
 
     if (cur->subprocess_execved && args->error_code == 255) {
-        cur->success = false;
+        cur->auth_success = false;
         //bpf_trace_printk("authkeycommand failed to auth\\n");
 
         struct authentication auth = {
@@ -307,8 +307,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_alarm)
         return 1;
 
     if (cur->subprocess_execved && args->seconds == 0) {
-        cur->success = true;
-        //bpf_trace_printk("authkeycommand success to auth\\n");
+        cur->auth_success = true;
 
         struct authentication auth = {
             .success = true,
