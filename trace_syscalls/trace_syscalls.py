@@ -179,16 +179,12 @@ TRACEPOINT_PROBE(syscalls, sys_enter_execve)
     if ((parent = threads.lookup(&parent_pid_tgid)) == NULL)
         return 1;
 
-    if (!is_parent_comm_sshd()) {
-        bpf_trace_printk("not parent sshd\\n");
+    if (!is_parent_comm_sshd())
         return 1;
-    }
 
     get_argv(argv, args->argv, ARGV_MAX);
 
     bpf_probe_read(&parent->username, sizeof(parent->username), argv[1]);
-
-    bpf_trace_printk("execve(file, %s\\n", parent->username);
 
     return 0;
 }
@@ -254,9 +250,6 @@ TRACEPOINT_PROBE(syscalls, sys_exit_wait4)
         copy_username(cmd.username, cur->username);
 
         authorizedkeys_command_events.perf_submit(args, &cmd, sizeof(cmd));
-
-        //bpf_trace_printk("authkeycommand ran in %lu ms (execved %d)\\n",
-        //               (cur->subprocess_end - cur->subprocess_start) / 1000000, cur->subprocess_execved);
     }
 
     return 0;
@@ -279,7 +272,6 @@ TRACEPOINT_PROBE(syscalls, sys_enter_exit_group)
 
     if (cur->subprocess_execved && args->error_code == 255) {
         cur->auth_success = false;
-        //bpf_trace_printk("authkeycommand failed to auth\\n");
 
         struct authentication auth = {
             .success = false,
@@ -348,13 +340,13 @@ def authentication_cb(cpu, data, size):
     assert size >= ct.sizeof(Authentication)
     auth = ct.cast(data, ct.POINTER(Authentication)).contents
 
-    print("[auth finished] username: {} success: {}".format(auth.username, auth.success))
+    print("[auth finished] username: {} success: {}".format(str(auth.username), bool(auth.success)))
 
 def authorizedkeys_command_cb(cpu, data, size):
     assert size >= ct.sizeof(AuthorizedKeysCommand)
     cmd = ct.cast(data, ct.POINTER(AuthorizedKeysCommand)).contents
 
-    print("[AuthorizedKeysCommand ran] username: {} duration: {} ms".format(cmd.username, (cmd.end - cmd.start) / 1000000))
+    print("[AuthorizedKeysCommand ran] username: {} duration: {} ms".format(str(cmd.username), (cmd.end - cmd.start) / 1000000))
 
 
 def main():
@@ -367,7 +359,6 @@ def main():
     while True:
         try:
             bpf.perf_buffer_poll()
-            # bpf.trace_print()
         except KeyboardInterrupt:
             sys.exit();
 
