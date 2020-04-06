@@ -103,14 +103,15 @@ static int is_parent_comm_sshd(void)
     return strncmp(parent_comm, "sshd", 4) == 0;
 }
 
-static u32 _get_pid()
+static u32 __get_pid()
 {
-    return bpf_get_current_pid_tgid() & 0xFFFFFFFF;
+    return (u32) bpf_get_current_pid_tgid();
 }
+
 
 static u64 get_random_id(void)
 {
-    return ((u64)bpf_get_prandom_u32() << 32) | _get_pid();
+    return ((u64)bpf_get_prandom_u32() << 32) | __get_pid();
 }
 
 /**
