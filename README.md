@@ -65,6 +65,6 @@ sudo ./<script>.py
 
 
 # Requirements
-* sshd in (*/usr/bin/sshd*) that has not been stripped
+* sshd
 * bcc
 * python-bcc
