@@ -25,8 +25,8 @@
 struct connection_process {
 	char username[USERNAME_MAX];
 
-	pid_t pid_tgid;
-	pid_t subprocess_tgid;
+	u64 pid_tgid;
+	u32 subprocess_tgid;
 
 	u64 subprocess_start_time;
 	u64 subprocess_end_time;
@@ -34,7 +34,7 @@ struct connection_process {
 	bool subprocess_execved;
 };
 
-BPF_HASH(threads, pid_t, struct connection_process);
+BPF_HASH(processes, u64, struct connection_process);
 
 struct authentication {
 	char username[USERNAME_MAX];
@@ -109,11 +109,6 @@ static u32 get_current_pid()
 	return (u32) bpf_get_current_pid_tgid();
 }
 
-static u64 get_random_id(void)
-{
-	return ((u64)bpf_get_prandom_u32() << 32) | get_current_pid();
-}
-
 /**
  * Detect the first clone, for the authkeys prog subprocess.
  *
@@ -122,8 +117,8 @@ static u64 get_random_id(void)
  */
 TRACEPOINT_PROBE(syscalls, sys_exit_clone)
 {
-	pid_t pid_tgid = bpf_get_current_pid_tgid();
-	pid_t child_tgid = args->ret;
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	u32 child_tgid = args->ret;
 	struct connection_process cur = {};
 
 	if (!is_current_comm_sshd())
@@ -139,14 +134,14 @@ TRACEPOINT_PROBE(syscalls, sys_exit_clone)
 	cur.subprocess_start_time = bpf_ktime_get_ns();
 	cur.subprocess_execved = false;
 
-	threads.update(&pid_tgid, &cur);
+	processes.update(&pid_tgid, &cur);
 
 	return 0;
 }
 
 static bool is_authkey_program()
 {
-	char authkey_program[] = "__AUTHKEYSCOMMAND__";
+	char authkey_program[] = __AUTHKEYSCOMMAND__;
 	char comm[sizeof(authkey_program)] = "";
 
 	bpf_get_current_comm(&comm, sizeof(comm));
@@ -172,11 +167,11 @@ static void get_argv(char **dst, const char *const *argv, size_t len)
  */
 TRACEPOINT_PROBE(syscalls, sys_enter_execve)
 {
-	pid_t parent_pid_tgid = get_parent_pid_tgid();
+	u64 parent_pid_tgid = get_parent_pid_tgid();
 	struct connection_process *parent;
 	char *argv[ARGV_MAX];
 
-	if ((parent = threads.lookup(&parent_pid_tgid)) == NULL)
+	if ((parent = processes.lookup(&parent_pid_tgid)) == NULL)
 		return 1;
 
 	if (!is_parent_comm_sshd())
@@ -198,10 +193,10 @@ TRACEPOINT_PROBE(syscalls, sys_enter_execve)
  */
 TRACEPOINT_PROBE(syscalls, sys_exit_execve)
 {
-	pid_t parent_pid_tgid = get_parent_pid_tgid();
+	u64 parent_pid_tgid = get_parent_pid_tgid();
 	struct connection_process *parent;
 
-	if ((parent = threads.lookup(&parent_pid_tgid)) == NULL)
+	if ((parent = processes.lookup(&parent_pid_tgid)) == NULL)
 		return 1;
 
 	if (!is_authkey_program())
@@ -214,8 +209,7 @@ TRACEPOINT_PROBE(syscalls, sys_exit_execve)
 
 static void copy_username(char *dst, const char *src)
 {
-	for (size_t i = 0; i < USERNAME_MAX; i++) {
-		dst[i] = src[i];
+	for (size_t i = 0; i < USERNAME_MAX; i++) { dst[i] = src[i];
 	}
 }
 
@@ -226,24 +220,23 @@ static void copy_username(char *dst, const char *src)
  */
 TRACEPOINT_PROBE(syscalls, sys_exit_wait4)
 {
-	pid_t pid_tgid = bpf_get_current_pid_tgid();
-	pid_t waited_pid = args->ret;
+	u64 pid_tgid = bpf_get_current_pid_tgid();
+	u32 waited_tgid = args->ret;
 	struct connection_process *cur;
 
 	if (!is_current_comm_sshd())
 		return 1;
 
-	if ((cur = threads.lookup(&pid_tgid)) == NULL)
+	if ((cur = processes.lookup(&pid_tgid)) == NULL)
 		return 1;
 
 	/* TODO: we should check the [int *options]
 	 * to make sure the subprocess is dead.
 	 */
-	if (cur->subprocess_execved && waited_pid == cur->subprocess_tgid) {
+	if (cur->subprocess_execved && waited_tgid == cur->subprocess_tgid) {
 		cur->subprocess_end_time = bpf_ktime_get_ns();
 
 		struct authorizedkeys_command cmd = {
-			.username = "",
 			.start = cur->subprocess_start_time,
 			.end = cur->subprocess_end_time,
 		};
@@ -261,13 +254,13 @@ TRACEPOINT_PROBE(syscalls, sys_exit_wait4)
  */
 TRACEPOINT_PROBE(syscalls, sys_enter_exit_group)
 {
-	pid_t pid_tgid = bpf_get_current_pid_tgid();
+	u64 pid_tgid = bpf_get_current_pid_tgid();
 	struct connection_process *cur;
 
 	if (!is_current_comm_sshd())
 		return 1;
 
-	if ((cur = threads.lookup(&pid_tgid)) == NULL)
+	if ((cur = processes.lookup(&pid_tgid)) == NULL)
 		return 1;
 
 	if (cur->subprocess_execved && args->error_code == 255) {
@@ -278,8 +271,9 @@ TRACEPOINT_PROBE(syscalls, sys_enter_exit_group)
 
 		authentication_events.perf_submit(args, &auth, sizeof(auth));
 
-		threads.delete(&pid_tgid);
+		processes.delete(&pid_tgid);
 	}
+
 	return 0;
 }
 
@@ -293,13 +287,13 @@ TRACEPOINT_PROBE(syscalls, sys_enter_exit_group)
  */
 TRACEPOINT_PROBE(syscalls, sys_enter_alarm)
 {
-	pid_t pid_tgid = bpf_get_current_pid_tgid();
+	u64 pid_tgid = bpf_get_current_pid_tgid();
 	struct connection_process *cur;
 
 	if (!is_current_comm_sshd())
 		return 1;
 
-	if ((cur = threads.lookup(&pid_tgid)) == NULL)
+	if ((cur = processes.lookup(&pid_tgid)) == NULL)
 		return 1;
 
 	if (cur->subprocess_execved && args->seconds == 0) {
@@ -310,7 +304,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_alarm)
 
 		authentication_events.perf_submit(args, &auth, sizeof(auth));
 
-		threads.delete(&pid_tgid);
+		processes.delete(&pid_tgid);
 	}
 
 	return 0;
