@@ -7,9 +7,9 @@ The bpftrace scripts were just prototypes for the BCC scripts.
 # Scripts
 
 ## with_syscalls
-===
+
 ## with_symbols
-===
+
 Scripts to trace sshd that require sshd to not be stripped.
 Also make uses of unstable APIs.
 
