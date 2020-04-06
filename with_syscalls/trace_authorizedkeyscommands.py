@@ -25,13 +25,19 @@ def authentication_cb(cpu, data, size):
     assert size >= ct.sizeof(Authentication)
     auth = ct.cast(data, ct.POINTER(Authentication)).contents
 
-    print("[auth finished] username: {} success: {}".format(str(auth.username), bool(auth.success)))
+    username = auth.username.decode()
+    success = auth.success
+
+    print(f"sshd_auth_finished{{username=\"{username}\", success={success}}}")
 
 def authorizedkeys_command_cb(cpu, data, size):
     assert size >= ct.sizeof(AuthorizedKeysCommand)
     cmd = ct.cast(data, ct.POINTER(AuthorizedKeysCommand)).contents
 
-    print("[AuthorizedKeysCommand ran] username: {} duration: {} ms".format(str(cmd.username), (cmd.end - cmd.start) / 1000000))
+    username = cmd.username.decode()
+    duration_ms = (cmd.end - cmd.start) / 1000000
+
+    print(f"sshd_authorizedkeyscommand_ran{{username=\"{username}\", duration_ms={duration_ms}}}")
 
 
 def main():

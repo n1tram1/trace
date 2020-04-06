@@ -15,9 +15,9 @@ Also each time an authentication finishes, display who was the user and whether 
 
 #### Screenshots
 ```
-[AuthorizedKeysCommand ran] username: b'martin' duration: 1006.35946 ms
-[AuthorizedKeysCommand ran] username: b'martin' duration: 1007.545194 ms
-[auth finished] username: b'martin' success: True
+sshd_authorizedkeyscommand_ran{username="martin", duration_ms=1010.226717}
+sshd_authorizedkeyscommand_ran{username="martin", duration_ms=1007.266651}
+sshd_auth_finished{username="martin", success=1}
 ```
 As we can see from the screenshot above, the AuthorzedKeysCommand was ran twice
 and the user 'martin' was authenticated successfully.
