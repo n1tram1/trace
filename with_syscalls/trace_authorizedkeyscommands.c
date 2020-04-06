@@ -139,7 +139,7 @@ TRACEPOINT_PROBE(syscalls, sys_exit_clone)
 	return 0;
 }
 
-static bool is_authkey_program()
+static bool is_authorizedkeys_command()
 {
 	char authkey_program[] = __AUTHKEYSCOMMAND__;
 	char comm[sizeof(authkey_program)] = "";
@@ -199,7 +199,7 @@ TRACEPOINT_PROBE(syscalls, sys_exit_execve)
 	if ((parent = processes.lookup(&parent_pid_tgid)) == NULL)
 		return 1;
 
-	if (!is_authkey_program())
+	if (!is_authorizedkeys_command())
 		return 1;
 
 	parent->subprocess_execved = true;
