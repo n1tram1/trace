@@ -17,20 +17,20 @@ bpf_source = """
  * Diagram below shows the flow of the specific sshd thread being traced.
  *
  *                             execve   execute authkeys prog
- *                                !        comm != "sshd"
- *                                !      (subprocess thread)       if auth fails
- *                            +---!----------------------------X  +-------------->exit_group(255)
+ *                                |        comm != "sshd"
+ *                                v      (subprocess)              if auth fails
+ *                            +--------------------------------X  +-------------->exit_group(255)
  * recv connection            |                                |  |
  *  comm == "sshd"            |                                |  |
- * (connection thread)   clone|                           wait4|  |
+ * (connection process)  clone|                           wait4|  |
  *        |                   |                                |  |
- *        +-------------------+--------------------------------+--+------------>start ssh session in same thread
- *                                                                    alarm(0)
+ *        +-------------------+--------------------------------+--+--|--------|>start ssh session in same thread
+ *                                                                   |alarm(0)|
  *
  * For some reason, the authkeys prog is executed twice.
  */
 
-struct connection_thread {
+struct connection_process {
     char username[USERNAME_MAX];
 
     pid_t pid_tgid;
@@ -42,7 +42,7 @@ struct connection_thread {
     bool subprocess_execved;
 };
 
-BPF_HASH(threads, pid_t, struct connection_thread);
+BPF_HASH(threads, pid_t, struct connection_process);
 
 struct authentication {
     char username[USERNAME_MAX];
@@ -122,7 +122,7 @@ TRACEPOINT_PROBE(syscalls, sys_exit_clone)
 {
     pid_t pid_tgid = bpf_get_current_pid_tgid();
     pid_t child_tgid = args->ret;
-    struct connection_thread cur = {};
+    struct connection_process cur = {};
 
     if (!is_comm_sshd())
         return 1;
@@ -171,7 +171,7 @@ static void get_argv(char **dst, const char *const *argv, size_t len)
 TRACEPOINT_PROBE(syscalls, sys_enter_execve)
 {
     pid_t parent_pid_tgid = get_parent_pid_tgid();
-    struct connection_thread *parent;
+    struct connection_process *parent;
     char *argv[ARGV_MAX];
 
     if ((parent = threads.lookup(&parent_pid_tgid)) == NULL)
@@ -188,7 +188,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_execve)
 }
 
 /**
- * Catch when the execve syscall finishes for the subprocess.
+ * Catch when the execve syscall finishes in the subprocess.
  * We must check the new comm of the subprocess.
  * Be careful, sshd can call execve for other things.
  *
@@ -197,7 +197,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_execve)
 TRACEPOINT_PROBE(syscalls, sys_exit_execve)
 {
     pid_t parent_pid_tgid = get_parent_pid_tgid();
-    struct connection_thread *parent;
+    struct connection_process *parent;
 
     if ((parent = threads.lookup(&parent_pid_tgid)) == NULL)
         return 1;
@@ -226,7 +226,7 @@ TRACEPOINT_PROBE(syscalls, sys_exit_wait4)
 {
     pid_t pid_tgid = bpf_get_current_pid_tgid();
     pid_t waited_pid = args->ret;
-    struct connection_thread *cur;
+    struct connection_process *cur;
 
     if (!is_comm_sshd())
         return 1;
@@ -260,7 +260,7 @@ TRACEPOINT_PROBE(syscalls, sys_exit_wait4)
 TRACEPOINT_PROBE(syscalls, sys_enter_exit_group)
 {
     pid_t pid_tgid = bpf_get_current_pid_tgid();
-    struct connection_thread *cur;
+    struct connection_process *cur;
 
     if (!is_comm_sshd())
         return 1;
@@ -292,7 +292,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_exit_group)
 TRACEPOINT_PROBE(syscalls, sys_enter_alarm)
 {
     pid_t pid_tgid = bpf_get_current_pid_tgid();
-    struct connection_thread *cur;
+    struct connection_process *cur;
 
     if (!is_comm_sshd())
         return 1;
