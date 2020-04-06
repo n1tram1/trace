@@ -171,6 +171,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_exit_group)
         return 1;
 
     if (args->error_code == 255) {
+    if (cur->subprocess_execved && args->error_code == 255) {
         cur->success = false;
         bpf_trace_printk("authkeycommand failed to auth\\n");
 
