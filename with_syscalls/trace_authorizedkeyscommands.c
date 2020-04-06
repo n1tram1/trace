@@ -49,7 +49,7 @@ struct authorizedkeys_command {
 	u64 end;
 };
 
-BPF_PERF_OUTPUT(authorizedkeys_command_events);
+BPF_PERF_OUTPUT(authorizedkeyscommand_events);
 
 static u64 get_pid_tgid(const struct task_struct *task)
 {
@@ -242,7 +242,7 @@ TRACEPOINT_PROBE(syscalls, sys_exit_wait4)
 		};
 		copy_username(cmd.username, cur->username);
 
-		authorizedkeys_command_events.perf_submit(args, &cmd, sizeof(cmd));
+		authorizedkeyscommand_events.perf_submit(args, &cmd, sizeof(cmd));
 	}
 
 	return 0;
