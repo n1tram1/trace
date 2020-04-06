@@ -30,6 +30,9 @@ Scripts to trace sshd that require sshd to not be stripped.
 ### trace_sessions
 Collect stats of sessions as they end.
 
+**WARNING**: For now the script is dependant on the fact that the
+authkeyscommand is '/usr/local/bin/ssh-auth.sh %u'
+
 #### Screenshots
 ```
 /-----------------------------------------------------------------------\
@@ -38,6 +41,7 @@ Collect stats of sessions as they end.
 |         root         |    4571136 |   16851732 |                10388 |
 ^C----------------------------------------------------------------------/
 ```
+
 ### trace_authorizedkeyscommand
 Collect stats about the auth with the 'AuthorizedKeysCommand' program.
 
