@@ -33,15 +33,13 @@ bpf_source = """
 struct connection_thread {
     char username[USERNAME_MAX];
 
-    pid_t pid;
-    pid_t subprocess_thread;
+    pid_t pid_tgid;
+    pid_t subprocess_tgid;
 
     u64 subprocess_start_time;
     u64 subprocess_end_time;
 
     bool subprocess_execved;
-
-    bool auth_success;
 };
 
 BPF_HASH(threads, pid_t, struct connection_thread);
@@ -74,7 +72,7 @@ static pid_t get_parent_pid_tgid(void)
     if (!parent)
         return 0;
 
-    return ((u64)parent->tgid) << 32 | parent->pid;
+    return ((u64)parent->tgid << 32) | parent->pid;
 }
 
 static int is_comm_sshd(void)
@@ -123,22 +121,21 @@ static u64 get_random_id(void)
 TRACEPOINT_PROBE(syscalls, sys_exit_clone)
 {
     pid_t pid_tgid = bpf_get_current_pid_tgid();
-    pid_t child_pid = args->ret;
+    pid_t child_tgid = args->ret;
     struct connection_thread cur = {};
 
     if (!is_comm_sshd())
         return 1;
 
     /* Check we are in the parent */
-    if (child_pid == 0)
+    if (child_tgid == 0)
         return 1;
 
     cur.username[0] = '\\0';
-    cur.pid = pid_tgid;
-    cur.subprocess_thread = child_pid;
+    cur.pid_tgid = pid_tgid;
+    cur.subprocess_tgid = child_tgid;
     cur.subprocess_start_time = bpf_ktime_get_ns();
     cur.subprocess_execved = false;
-    cur.auth_success = true;
 
     threads.update(&pid_tgid, &cur);
 
@@ -240,7 +237,7 @@ TRACEPOINT_PROBE(syscalls, sys_exit_wait4)
     /* TODO: we should check the [int *options]
      * to make sure the subprocess is dead.
      */
-    if (cur->subprocess_execved && waited_pid == cur->subprocess_thread) {
+    if (cur->subprocess_execved && waited_pid == cur->subprocess_tgid) {
         cur->subprocess_end_time = bpf_ktime_get_ns();
 
         struct authorizedkeys_command cmd = {
@@ -272,8 +269,6 @@ TRACEPOINT_PROBE(syscalls, sys_enter_exit_group)
         return 1;
 
     if (cur->subprocess_execved && args->error_code == 255) {
-        cur->auth_success = false;
-
         struct authentication auth = {
             .success = false,
         };
@@ -306,8 +301,6 @@ TRACEPOINT_PROBE(syscalls, sys_enter_alarm)
         return 1;
 
     if (cur->subprocess_execved && args->seconds == 0) {
-        cur->auth_success = true;
-
         struct authentication auth = {
             .success = true,
         };
