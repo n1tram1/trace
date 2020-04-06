@@ -11,6 +11,7 @@ bpf_source = """
 #include <linux/sched.h>
 
 #define USERNAME_MAX 64
+#define ARGV_MAX 2
 
 /*
  * Diagram below shows the flow of the specific sshd thread being traced.
@@ -159,6 +160,11 @@ static bool is_authkey_program()
     return true;
 }
 
+static void get_argv(char **dst, char **src, size_t len)
+{
+    bpf_probe_read(dst, sizeof(*dst) * len, src);
+}
+
 /**
  * Catch the subprocess just before it uses execve, to get its argv.
  * In the argv there can be the username with which the AuthorizedKeysCommand
@@ -168,7 +174,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_execve)
 {
     pid_t parent_pid_tgid = get_parent_pid_tgid();
     struct connection_thread *parent;
-    char *argv[10];
+    char *argv[ARGV_MAX];
 
     if ((parent = threads.lookup(&parent_pid_tgid)) == NULL)
         return 1;
@@ -178,8 +184,7 @@ TRACEPOINT_PROBE(syscalls, sys_enter_execve)
         return 1;
     }
 
-    /* TODO: properly get argv */
-    bpf_probe_read(&argv, sizeof(argv), args->argv);
+    get_argv(argv, args->argv, ARGV_MAX);
 
     bpf_probe_read(&parent->username, sizeof(parent->username), argv[1]);
 
