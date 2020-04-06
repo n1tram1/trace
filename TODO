@@ -1,4 +1,6 @@
-* count how much is sent/recv for the auth
-* talk about issues with the script (regarding unstable APIs)
-* output in json/xml/csv
-* pretty-print the formatted output
+* count how much data is sent, somehow
+* make the script non-dependant on a hardcoded string
+  (because of the 'is_authorizedkeys_command')
+* cleanup all the comm comparisons functions
+* refactor functions
+* improve names for helper functions
