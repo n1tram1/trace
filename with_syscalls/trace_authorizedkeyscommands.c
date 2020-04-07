@@ -1,7 +1,9 @@
 #include <uapi/linux/ptrace.h>
 #include <linux/sched.h>
 
-#define __AUTHKEYSCOMMAND__ "ssh-auth.sh"
+#ifndef AUTHORIZEDKEYSCOMMAND_PROG
+#error "Please specify the AuthorizedKeysCommand program"
+#endif
 
 #define USERNAME_MAX 64
 #define ARGV_MAX 2
@@ -140,7 +142,7 @@ TRACEPOINT_PROBE(syscalls, sys_exit_clone)
 
 static bool is_authorizedkeys_command()
 {
-	char authkey_program[] = __AUTHKEYSCOMMAND__;
+	char authkey_program[] = AUTHORIZEDKEYSCOMMAND_PROG;
 	char comm[sizeof(authkey_program)] = "";
 
 	bpf_get_current_comm(&comm, sizeof(comm));

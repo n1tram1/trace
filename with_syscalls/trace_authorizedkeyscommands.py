@@ -3,7 +3,6 @@
 from bcc import BPF
 
 import sys
-
 import ctypes as ct
 
 USERNAME_MAX = 64
@@ -45,8 +44,38 @@ def authorizedkeyscommand_cb(cpu, data, size):
            f"{{username=\"{username}\", duration_ms={duration_ms}}}"))
 
 
+def get_sshd_config_authorizedkeyscommand(config_path):
+    with open(config_path) as f:
+        for line in f.readlines():
+            tokens = line.split()
+            if len(tokens) > 1 and tokens[0] == "AuthorizedKeysCommand":
+                return tokens[1::]
+
+    return None
+
+
+def get_sshd_config_authorizedkeyscommand_prog(config_path):
+    authorizedkeyscommand = get_sshd_config_authorizedkeyscommand(config_path)
+    if len(authorizedkeyscommand) < 1:
+        return None
+
+    prog_path = authorizedkeyscommand[0]
+    prog = prog_path.split("/")[-1]
+
+    return prog
+
+
 def main():
-    bpf = BPF(src_file="./trace_authorizedkeyscommands.c")
+    prog = get_sshd_config_authorizedkeyscommand_prog("/etc/ssh/sshd_config")
+    if not prog:
+        print("Couldn't find  AuthorizedKeysCommand in sshd_config")
+        sys.exit()
+
+    cflags = [
+        f"-DAUTHORIZEDKEYSCOMMAND_PROG=\"{prog}\""
+    ]
+
+    bpf = BPF(src_file="./trace_authorizedkeyscommands.c", cflags=cflags)
     bpf["authentication_events"].open_perf_buffer(authentication_cb)
     bpf["authorizedkeyscommand_events"]\
         .open_perf_buffer(authorizedkeyscommand_cb)
