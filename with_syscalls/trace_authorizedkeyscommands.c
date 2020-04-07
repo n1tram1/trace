@@ -64,7 +64,6 @@ static u64 get_parent_pid_tgid(void)
 	if (!cur)
 		return 0;
 
-
 	parent = cur->parent;
 	if (!parent)
 		return 0;
@@ -106,7 +105,7 @@ static int is_current_comm_sshd(void)
 
 static u32 get_current_pid()
 {
-	return (u32) bpf_get_current_pid_tgid();
+	return (u32)bpf_get_current_pid_tgid();
 }
 
 /**
@@ -209,7 +208,8 @@ TRACEPOINT_PROBE(syscalls, sys_exit_execve)
 
 static void copy_username(char *dst, const char *src)
 {
-	for (size_t i = 0; i < USERNAME_MAX; i++) { dst[i] = src[i];
+	for (size_t i = 0; i < USERNAME_MAX; i++) {
+		dst[i] = src[i];
 	}
 }
 
@@ -242,7 +242,8 @@ TRACEPOINT_PROBE(syscalls, sys_exit_wait4)
 		};
 		copy_username(cmd.username, cur->username);
 
-		authorizedkeyscommand_events.perf_submit(args, &cmd, sizeof(cmd));
+		authorizedkeyscommand_events.perf_submit(args, &cmd,
+							 sizeof(cmd));
 	}
 
 	return 0;
