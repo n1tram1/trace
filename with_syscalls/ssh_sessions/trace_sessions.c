@@ -81,22 +81,30 @@ static u64 get_parent_pid_tgid(void)
 	return ((u64)parent->tgid << 32) | parent->pid;
 }
 
-static struct connection *get_ancestor_conn(void)
+static u64 get_grand_parent_pid_tgid(void)
 {
-	struct task_struct *tsk = (struct task_struct *)bpf_get_current_task();
-	struct connection *conn;
+	struct task_struct *curr = (struct task_struct *)bpf_get_current_task();
+	struct task_struct *parent = curr->parent;
+	struct task_struct *grand_parent;
 
-	for (int i = 0; i < 10 && tsk; i++)
-	{
-		u32 tgid = tsk->tgid;
-		if ((conn = connections.lookup(&tgid)) != NULL)
-			return conn;
-		tsk = tsk->parent;
-	}
+	if (!parent)
+		return 0;
 
-	return NULL;
+	if ((grand_parent = parent->parent) == NULL)
+		return 0;
+
+	return ((u64)grand_parent->tgid << 32) | grand_parent->pid;
 }
 
+static struct connection *get_grand_parent_conn(void)
+{
+	u32 grand_parent_tgid = get_grand_parent_pid_tgid() >> 32;
+
+	if (!grand_parent_tgid)
+		return NULL;
+
+	return connections.lookup(&grand_parent_tgid);
+}
 
 TRACEPOINT_PROBE(syscalls, sys_exit_accept)
 {
@@ -203,7 +211,7 @@ static void handle_new_net_clone(u32 net_tgid)
 	u64 pid_tgid = bpf_get_current_pid_tgid();
 	struct connection *conn;
 
-	if ((conn = get_ancestor_conn()) == NULL)
+	if ((conn = get_grand_parent_conn()) == NULL)
 		return;
 
 	conn->net_tgid = net_tgid;
