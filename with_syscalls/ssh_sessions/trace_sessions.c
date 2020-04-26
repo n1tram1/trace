@@ -167,7 +167,6 @@ static bool is_new_connection_clone(void)
 
 static void handle_new_connection(u32 conn_tgid)
 {
-	u64 pid_tgid = bpf_get_current_pid_tgid();
 	struct sshd_listener *listener;
 	struct connection conn = {};
 
