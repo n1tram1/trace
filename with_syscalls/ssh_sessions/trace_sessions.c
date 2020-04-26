@@ -45,9 +45,11 @@ BPF_HASH(connections, u32, struct connection);
 BPF_PERF_OUTPUT(connection_events);
 
 #define FILENAME_MAX 255
+#define EXTRA_DATA_MAX 128
 
 struct command {
 	char filename[FILENAME_MAX];
+	char extra_data[EXTRA_DATA_MAX];
 	u64 start;
 	u64 end;
 
@@ -104,6 +106,22 @@ static struct connection *get_grand_parent_conn(void)
 		return NULL;
 
 	return connections.lookup(&grand_parent_tgid);
+}
+
+static struct connection *get_ancestor_conn(void)
+{
+	struct task_struct *tsk = (struct task_struct *)bpf_get_current_task();
+	struct connection *conn;
+
+	for (int i = 0; i < 10 && tsk; i++)
+	{
+		u32 tgid = tsk->tgid;
+		if ((conn = connections.lookup(&tgid)) != NULL)
+			return conn;
+		tsk = tsk->parent;
+	}
+
+	return NULL;
 }
 
 TRACEPOINT_PROBE(syscalls, sys_exit_accept)
@@ -240,6 +258,19 @@ TRACEPOINT_PROBE(syscalls, sys_exit_clone)
 	return 0;
 }
 
+static int read_argv_entry(char *dst, size_t len, const char * const *argv, int n)
+{
+	char *argv_p = NULL;
+
+	bpf_probe_read(&argv_p, sizeof(argv_p), argv + n);
+	if (!argv_p)
+		return 1;
+
+	bpf_probe_read_str(dst, len, argv_p);
+
+	return 0;
+}
+
 TRACEPOINT_PROBE(syscalls, sys_enter_execve)
 {
 	u32 parent_tgid = get_parent_pid_tgid() >> 32;
@@ -251,12 +282,15 @@ TRACEPOINT_PROBE(syscalls, sys_enter_execve)
 		return 1;
 
 	cmd.filename[0] = '\0';
+	cmd.extra_data[0] = '\0';
 	cmd.start = bpf_ktime_get_ns();
 	cmd.end = 0;
 	cmd.parent_tgid = parent_tgid;
 	cmd.current_tgid = current_tgid;
 	cmd.id = conn->id;
-	bpf_probe_read_str(&cmd.filename, sizeof(cmd.filename), args->filename);
+	bpf_probe_read_str(cmd.filename, sizeof(cmd.filename), args->filename);
+
+	read_argv_entry(cmd.extra_data, sizeof(cmd.extra_data), args->argv, 1);
 
 	commands.insert(&current_tgid, &cmd);
 

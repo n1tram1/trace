@@ -10,6 +10,7 @@ import ctypes as ct
 g_commands = {}
 
 FILENAME_MAX = 255
+EXTRA_DATA_MAX = 128
 
 class Id(ct.Structure):
     _fields_ = [
@@ -59,6 +60,7 @@ class Connection(ct.Structure):
 class Command(ct.Structure):
     _fields_ = [
         ("filename", ct.c_char * FILENAME_MAX),
+        ("extra_data", ct.c_char * EXTRA_DATA_MAX),
         ("start", ct.c_ulonglong),
         ("end", ct.c_ulonglong),
         ("parent_tgid", ct.c_uint),
@@ -68,11 +70,12 @@ class Command(ct.Structure):
 
     def __str__(self):
         filename = self.filename.decode()
+        extra_data = self.extra_data.decode()
         duration_ms = (self.end - self.start) / 1000000
         parent = self.parent_tgid
         current = self.current_tgid
 
-        return f"{{filename=\"{filename}\", duration={duration_ms}, parent={parent}, current={current}}}"
+        return f"{{filename=\"{filename}\", extra_data={extra_data}, duration={duration_ms}, parent={parent}, current={current}}}"
 
     def __repr__(self):
         return str(self)
