@@ -180,9 +180,8 @@ int kretprobe__inet_accept(struct pt_regs *ctx)
 	return 0;
 }
 
-static bool is_new_connection_clone(void)
+static bool is_new_connection_clone(u64 pid_tgid)
 {
-	u64 pid_tgid = bpf_get_current_pid_tgid();
 	struct sshd_listener *listener;
 
 	if ((listener = get_sshd_listener()) == NULL)
@@ -213,9 +212,8 @@ static void handle_new_connection(u32 conn_tgid)
 	bpf_trace_printk("conn_tgid %u\n", conn_tgid);
 }
 
-static bool is_new_net_clone(void)
+static bool is_new_net_clone(u32 tgid)
 {
-	u32 tgid = bpf_get_current_pid_tgid() >> 32;
 	struct connection *conn;
 
 	if ((conn = connections.lookup(&tgid)) == NULL)
@@ -224,9 +222,8 @@ static bool is_new_net_clone(void)
 	return tgid == conn->priv_tgid;
 }
 
-static void handle_new_net_clone(u32 net_tgid)
+static void handle_new_net_clone(u64 pid_tgid, u32 net_tgid)
 {
-	u64 pid_tgid = bpf_get_current_pid_tgid();
 	struct connection *conn;
 
 	if ((conn = get_grand_parent_conn()) == NULL)
@@ -245,13 +242,19 @@ TRACEPOINT_PROBE(syscalls, sys_exit_clone)
 	if ((listener = get_sshd_listener()) == NULL)
 		return 1;
 
-	if (is_new_connection_clone()) {
+	/*
+	 * Check if this was sshd's call to clone by checking if one of our
+	 * ancestors is the sshd listener thread.
+	 */
+	if (is_new_connection_clone(pid_tgid)) {
 		handle_new_connection(child_tgid);
 		return 0;
 	}
 
-	if (is_new_net_clone()) {
-		handle_new_net_clone(child_tgid);
+	/*
+	 */
+	if (is_new_net_clone(pid_tgid >> 32)) {
+		handle_new_net_clone(pid_tgid, child_tgid);
 		return 0;
 	}
 
